@@ -156,15 +156,22 @@ def _format_status(status: ChannelStatus) -> str:
     warnings = list(status.permissions.problems)
     if not channel.is_active:
         warnings.append("сбор событий для канала выключен")
+    if status.active_season is None:
+        warnings.append("нет активного периода рейтинга")
     lines = [
         "<b>Статус канала</b>",
         f"Канал: {escape(channel.title)} (<code>{channel.telegram_channel_id}</code>)",
         f"Обсуждения: {escape(status.discussion_title)} "
         f"(<code>{channel.discussion_chat_id}</code>)",
-        f"Права бота: {'в порядке' if status.permissions.ok else 'требуют внимания'}",
-        f"Активный период: {'есть' if status.has_active_season else 'нет'}",
+        f"Права бота в канале: {'есть' if status.permissions.channel_ok else 'нет'}",
+        "Права бота в discussion group: "
+        f"{'есть' if status.permissions.discussion_ok else 'нет'}",
+        f"Права администратора: {'подтверждены' if status.administrator_ok else 'нет'}",
+        f"Активный период: {escape(status.active_season.name) if status.active_season else 'нет'}",
+        f"Пользователей: {status.user_count}",
         f"Публикаций: {status.post_count}",
         f"Комментариев: {status.comment_count}",
+        f"Активных реакций: {status.reaction_count}",
         f"Последнее событие: {escape(last_event)}",
     ]
     if warnings:

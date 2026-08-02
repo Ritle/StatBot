@@ -25,9 +25,12 @@ async def handle_help(message: Message) -> None:
         "/help — показать эту справку\n"
         "/setup — подключить канал и группу обсуждений\n"
         "/status — проверить конфигурацию и сбор событий\n"
+        "/settings — открыть административное меню\n"
         "/create_season — создать период рейтинга\n"
         "/start_season, /finish_season, /cancel_season — управлять периодом\n"
         "/seasons, /period — список и текущий период\n"
         "/rating, /me — рейтинг и личная статистика\n"
-        "/top_comments, /top_reactions — лидеры по типу активности",
+        "/top_comments, /top_reactions — лидеры по типу активности\n"
+        "/exclude, /include — управлять исключениями\n"
+        "/export — выгрузить статистику CSV",
     )

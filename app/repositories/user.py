@@ -21,6 +21,18 @@ class UserRepository(BaseRepository[User]):
     async def telegram_id_exists(self, telegram_user_id: int) -> bool:
         return await self.exists(User.telegram_user_id == telegram_user_id)
 
+    async def find_by_username(self, username: str) -> list[User]:
+        """Search only locally known current profiles, case-insensitively."""
+        normalized = username.removeprefix("@").strip().lower()
+        if not normalized:
+            return []
+        statement = (
+            select(User)
+            .where(func.lower(User.username) == normalized)
+            .order_by(User.telegram_user_id)
+        )
+        return list((await self.session.scalars(statement)).all())
+
     async def upsert_telegram_user(
         self,
         *,

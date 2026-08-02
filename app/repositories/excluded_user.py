@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.models.excluded_user import ExcludedUser
 from app.repositories.base import BaseRepository
@@ -29,3 +29,22 @@ class ExcludedUserRepository(BaseRepository[ExcludedUser]):
             ExcludedUser.channel_id == channel_id,
             ExcludedUser.user_id == user_id,
         )
+
+    async def list_by_channel_id(self, channel_id: int) -> list[ExcludedUser]:
+        statement = (
+            select(ExcludedUser)
+            .where(ExcludedUser.channel_id == channel_id)
+            .order_by(ExcludedUser.created_at.desc())
+        )
+        return list((await self.session.scalars(statement)).all())
+
+    async def remove(self, channel_id: int, user_id: int) -> bool:
+        statement = (
+            delete(ExcludedUser)
+            .where(
+                ExcludedUser.channel_id == channel_id,
+                ExcludedUser.user_id == user_id,
+            )
+            .returning(ExcludedUser.id)
+        )
+        return await self.session.scalar(statement) is not None
