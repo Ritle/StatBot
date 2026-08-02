@@ -53,7 +53,7 @@ async def db_session(migrated_database_url: str) -> AsyncIterator[AsyncSession]:
         await connection.execute(
             text(
                 "TRUNCATE TABLE "
-                "season_results, excluded_users, seasons, current_reactions, "
+                "admin_audit_log, season_results, excluded_users, seasons, current_reactions, "
                 "reaction_events, comments, posts, users, channels "
                 "RESTART IDENTITY CASCADE",
             ),
