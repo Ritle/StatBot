@@ -1,0 +1,1 @@
+"""Telegram activity bot application."""
