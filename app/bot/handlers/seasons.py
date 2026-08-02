@@ -156,7 +156,13 @@ async def admin_channel_selected(
     if action == "create":
         await _begin_creation(callback.message, state, channel)
     else:
-        await _dispatch_admin_action(callback.message, channel, action, database)
+        await _dispatch_admin_action(
+            callback.message,
+            channel,
+            action,
+            database,
+            callback.from_user.id,
+        )
 
 
 @router.message(Command("cancel"), StateFilter(*SeasonCreateStates.__all_states__))
@@ -326,6 +332,7 @@ async def confirm_season_creation(
                     else None
                 ),
                 minimum_comment_length=int(data["minimum_comment_length"]),
+                actor_user_id=callback.from_user.id,
             )
     except (SeasonError, IntegrityError) as error:
         await callback.answer(str(error), show_alert=True)
@@ -343,6 +350,7 @@ async def _dispatch_admin_action(
     channel: Channel,
     action: str,
     database: Database,
+    actor_user_id: int,
 ) -> None:
     async with database.session() as session:
         repository = SeasonRepository(session)
@@ -352,7 +360,10 @@ async def _dispatch_admin_action(
                 await message.answer("Нет черновиков для запуска.")
             elif len(seasons) == 1:
                 try:
-                    started = await SeasonService(session).start(seasons[0].id)
+                    started = await SeasonService(session).start(
+                        seasons[0].id,
+                        actor_user_id=actor_user_id,
+                    )
                     await session.commit()
                 except (SeasonError, IntegrityError) as error:
                     await session.rollback()
@@ -459,7 +470,14 @@ async def _run_admin_message_action(
         settings=settings,
     )
     if channel is not None:
-        await _dispatch_admin_action(message, channel, action, database)
+        if message.from_user is not None:
+            await _dispatch_admin_action(
+                message,
+                channel,
+                action,
+                database,
+                message.from_user.id,
+            )
 
 
 @router.callback_query(SeasonActionCallback.filter())
@@ -505,13 +523,23 @@ async def season_action_callback(
         async with database.session() as session, session.begin():
             service = SeasonService(session)
             if action == "start":
-                changed = await service.start(season.id)
+                changed = await service.start(
+                    season.id,
+                    actor_user_id=callback.from_user.id,
+                )
                 result_text = f"Период <b>{escape(changed.name)}</b> активирован."
             elif action == "cancel":
-                changed = await service.cancel(season.id)
+                changed = await service.cancel(
+                    season.id,
+                    actor_user_id=callback.from_user.id,
+                )
                 result_text = f"Период <b>{escape(changed.name)}</b> отменён."
             elif action == "finish":
-                changed, entries = await service.finish(season.id, timezone=verified.timezone)
+                changed, entries = await service.finish(
+                    season.id,
+                    timezone=verified.timezone,
+                    actor_user_id=callback.from_user.id,
+                )
                 result_text = (
                     f"Период <b>{escape(changed.name)}</b> завершён. "
                     f"Зафиксировано участников: {len(entries)}."
@@ -521,6 +549,7 @@ async def season_action_callback(
                     verified.id,
                     timezone=verified.timezone,
                     expected_season_id=season.id,
+                    actor_user_id=callback.from_user.id,
                 )
                 logger.info(
                     "Administrator %s recalculated active season %s for channel %s",

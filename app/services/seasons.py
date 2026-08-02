@@ -10,6 +10,7 @@ from app.exceptions import SeasonError
 from app.models import Season, SeasonStatus
 from app.repositories import SeasonRepository, SeasonResultRepository
 from app.schemas import RatingEntry
+from app.services.audit import AdminAction, AuditService
 from app.services.rating import RatingService
 
 
@@ -21,6 +22,7 @@ class SeasonService:
         self.seasons = SeasonRepository(session)
         self.results = SeasonResultRepository(session)
         self.rating = RatingService(session)
+        self.audit = AuditService(session)
 
     async def create_draft(
         self,
@@ -33,6 +35,7 @@ class SeasonService:
         reaction_points: int,
         daily_comment_limit: int | None,
         minimum_comment_length: int,
+        actor_user_id: int | None = None,
     ) -> Season:
         normalized_name = name.strip()
         if not normalized_name or len(normalized_name) > 255:
@@ -47,7 +50,7 @@ class SeasonService:
             raise SeasonError("баллы и минимальная длина не могут быть отрицательными")
         if daily_comment_limit is not None and daily_comment_limit <= 0:
             raise SeasonError("дневной лимит должен быть положительным или отключён")
-        return await self.seasons.create(
+        season = await self.seasons.create(
             channel_id=channel_id,
             name=normalized_name,
             starts_at=starts_at,
@@ -58,8 +61,17 @@ class SeasonService:
             daily_comment_limit=daily_comment_limit,
             minimum_comment_length=minimum_comment_length,
         )
+        if actor_user_id is not None:
+            await self.audit.record(
+                admin_id=actor_user_id,
+                channel_id=channel_id,
+                action=AdminAction.CREATE_SEASON,
+                target_type="season",
+                target_id=season.id,
+            )
+        return season
 
-    async def start(self, season_id: int) -> Season:
+    async def start(self, season_id: int, *, actor_user_id: int | None = None) -> Season:
         season = await self.seasons.get_locked(season_id)
         if season is None:
             raise SeasonError("период не найден")
@@ -67,15 +79,33 @@ class SeasonService:
             raise SeasonError("активировать можно только черновик")
         if await self.seasons.active_exists(season.channel_id):
             raise SeasonError("для канала уже существует активный период")
-        return await self.seasons.update(season, status=SeasonStatus.ACTIVE)
+        season = await self.seasons.update(season, status=SeasonStatus.ACTIVE)
+        if actor_user_id is not None:
+            await self.audit.record(
+                admin_id=actor_user_id,
+                channel_id=season.channel_id,
+                action=AdminAction.START_SEASON,
+                target_type="season",
+                target_id=season.id,
+            )
+        return season
 
-    async def cancel(self, season_id: int) -> Season:
+    async def cancel(self, season_id: int, *, actor_user_id: int | None = None) -> Season:
         season = await self.seasons.get_locked(season_id)
         if season is None:
             raise SeasonError("период не найден")
         if season.status not in {SeasonStatus.DRAFT, SeasonStatus.ACTIVE}:
             raise SeasonError("отменить можно только черновик или активный период")
-        return await self.seasons.update(season, status=SeasonStatus.CANCELLED)
+        season = await self.seasons.update(season, status=SeasonStatus.CANCELLED)
+        if actor_user_id is not None:
+            await self.audit.record(
+                admin_id=actor_user_id,
+                channel_id=season.channel_id,
+                action=AdminAction.CANCEL_SEASON,
+                target_type="season",
+                target_id=season.id,
+            )
+        return season
 
     async def finish(
         self,
@@ -83,6 +113,7 @@ class SeasonService:
         *,
         timezone: str,
         finished_at: datetime | None = None,
+        actor_user_id: int | None = None,
     ) -> tuple[Season, tuple[RatingEntry, ...]]:
         season = await self.seasons.get_locked(season_id)
         if season is None:
@@ -116,6 +147,15 @@ class SeasonService:
             status=SeasonStatus.FINISHED,
             finished_at=now,
         )
+        if actor_user_id is not None:
+            await self.audit.record(
+                admin_id=actor_user_id,
+                channel_id=season.channel_id,
+                action=AdminAction.FINISH_SEASON,
+                target_type="season",
+                target_id=season.id,
+                metadata={"participants": len(entries)},
+            )
         return season, entries
 
     async def recalculate_active(
@@ -124,10 +164,75 @@ class SeasonService:
         *,
         timezone: str,
         expected_season_id: int | None = None,
+        actor_user_id: int | None = None,
     ) -> tuple[Season, tuple[RatingEntry, ...]]:
         season = await self.seasons.get_active_by_channel_id(channel_id)
         if season is None:
             raise SeasonError("у канала нет активного периода")
         if expected_season_id is not None and season.id != expected_season_id:
             raise SeasonError("кнопка относится к другому активному периоду")
-        return season, await self.rating.get_all(season, timezone=timezone)
+        entries = await self.rating.get_all(season, timezone=timezone)
+        if actor_user_id is not None:
+            await self.audit.record(
+                admin_id=actor_user_id,
+                channel_id=season.channel_id,
+                action=AdminAction.RECALCULATE,
+                target_type="season",
+                target_id=season.id,
+                metadata={"participants": len(entries)},
+            )
+        return season, entries
+
+    async def update_rules(
+        self,
+        season_id: int,
+        *,
+        actor_user_id: int,
+        confirmed_active: bool,
+        comment_points: int | None = None,
+        reaction_points: int | None = None,
+        daily_comment_limit: int | None | object = ...,
+        minimum_comment_length: int | None = None,
+    ) -> Season:
+        """Change scoring rules while preserving finalized snapshots."""
+        season = await self.seasons.get_locked(season_id)
+        if season is None:
+            raise SeasonError("период не найден")
+        if season.status == SeasonStatus.FINISHED:
+            raise SeasonError("правила завершённого периода изменять нельзя")
+        if season.status == SeasonStatus.CANCELLED:
+            raise SeasonError("правила отменённого периода изменять нельзя")
+        if season.status == SeasonStatus.ACTIVE and not confirmed_active:
+            raise SeasonError("изменение активного периода требует подтверждения")
+
+        changes: dict[str, object] = {}
+        if comment_points is not None:
+            if comment_points < 0:
+                raise SeasonError("баллы не могут быть отрицательными")
+            changes["comment_points"] = comment_points
+        if reaction_points is not None:
+            if reaction_points < 0:
+                raise SeasonError("баллы не могут быть отрицательными")
+            changes["reaction_points"] = reaction_points
+        if minimum_comment_length is not None:
+            if minimum_comment_length < 0:
+                raise SeasonError("минимальная длина не может быть отрицательной")
+            changes["minimum_comment_length"] = minimum_comment_length
+        if daily_comment_limit is not ...:
+            if daily_comment_limit is not None and (
+                not isinstance(daily_comment_limit, int) or daily_comment_limit <= 0
+            ):
+                raise SeasonError("дневной лимит должен быть положительным или отключён")
+            changes["daily_comment_limit"] = daily_comment_limit
+        if not changes:
+            raise SeasonError("не передано ни одного изменения")
+        season = await self.seasons.update(season, **changes)
+        await self.audit.record(
+            admin_id=actor_user_id,
+            channel_id=season.channel_id,
+            action=AdminAction.UPDATE_RULES,
+            target_type="season",
+            target_id=season.id,
+            metadata={"fields": sorted(changes)},
+        )
+        return season

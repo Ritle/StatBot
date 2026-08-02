@@ -1,5 +1,6 @@
 """ORM model registry imported by Alembic."""
 
+from app.models.admin_audit import AdminAuditLog
 from app.models.channel import Channel
 from app.models.comment import Comment
 from app.models.enums import SeasonStatus
@@ -11,6 +12,7 @@ from app.models.season_result import SeasonResult
 from app.models.user import User
 
 __all__ = [
+    "AdminAuditLog",
     "Channel",
     "Comment",
     "CurrentReaction",

@@ -13,6 +13,7 @@ from app.config import Settings
 from app.exceptions import SetupError, SetupPermissionError
 from app.models import Channel
 from app.repositories import ChannelRepository
+from app.services.audit import AdminAction, AuditService
 from app.services.permissions import BotPermissionReport, TelegramPermissionService
 
 
@@ -62,6 +63,17 @@ class ChannelSetupService:
             username=channel_info.username,
             discussion_chat_id=discussion_info.id,
             timezone=self.settings.default_timezone,
+        )
+        await AuditService(self.session).record(
+            admin_id=actor_user_id,
+            channel_id=channel.id,
+            action=AdminAction.SETUP_CHANNEL,
+            target_type="channel",
+            target_id=channel.id,
+            metadata={
+                "telegram_channel_id": channel.telegram_channel_id,
+                "discussion_chat_id": discussion_info.id,
+            },
         )
         return SetupResult(
             channel=channel,
