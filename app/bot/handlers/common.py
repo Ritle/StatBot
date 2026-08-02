@@ -24,5 +24,10 @@ async def handle_help(message: Message) -> None:
         "/start — начать работу\n"
         "/help — показать эту справку\n"
         "/setup — подключить канал и группу обсуждений\n"
-        "/status — проверить конфигурацию и сбор событий",
+        "/status — проверить конфигурацию и сбор событий\n"
+        "/create_season — создать период рейтинга\n"
+        "/start_season, /finish_season, /cancel_season — управлять периодом\n"
+        "/seasons, /period — список и текущий период\n"
+        "/rating, /me — рейтинг и личная статистика\n"
+        "/top_comments, /top_reactions — лидеры по типу активности",
     )
