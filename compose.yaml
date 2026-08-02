@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: activity_bot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d activity_bot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    restart: unless-stopped
+
+  bot:
+    build:
+      context: .
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/activity_bot
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/activity_bot_test
+      SUPERADMIN_IDS: ${SUPERADMIN_IDS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Europe/Amsterdam}
+      BOT_MODE: ${BOT_MODE:-polling}
+      WEBHOOK_BASE_URL: ${WEBHOOK_BASE_URL:-}
+      WEBHOOK_PATH: ${WEBHOOK_PATH:-/telegram/webhook}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
