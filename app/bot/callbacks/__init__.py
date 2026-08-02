@@ -1,0 +1,1 @@
+"""Telegram callback data definitions."""
