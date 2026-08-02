@@ -1,8 +1,9 @@
 """Season result repository."""
 
+from collections.abc import Iterable
 from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.models.season_result import SeasonResult
 from app.repositories.base import BaseRepository
@@ -29,3 +30,15 @@ class SeasonResultRepository(BaseRepository[SeasonResult]):
             SeasonResult.season_id == season_id,
             SeasonResult.user_id == user_id,
         )
+
+    async def replace_for_season(
+        self,
+        season_id: int,
+        rows: Iterable[dict[str, object]],
+    ) -> None:
+        """Replace a not-yet-published snapshot inside the caller's transaction."""
+        await self.session.execute(
+            delete(SeasonResult).where(SeasonResult.season_id == season_id),
+        )
+        self.session.add_all(SeasonResult(season_id=season_id, **row) for row in rows)
+        await self.session.flush()

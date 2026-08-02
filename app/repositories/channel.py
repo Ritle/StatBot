@@ -29,6 +29,10 @@ class ChannelRepository(BaseRepository[Channel]):
     async def telegram_id_exists(self, telegram_channel_id: int) -> bool:
         return await self.exists(Channel.telegram_channel_id == telegram_channel_id)
 
+    async def list_active(self) -> list[Channel]:
+        statement = select(Channel).where(Channel.is_active.is_(True)).order_by(Channel.title)
+        return list((await self.session.scalars(statement)).all())
+
     async def upsert_settings(
         self,
         *,
