@@ -9,6 +9,9 @@ def test_dispatcher_contains_basic_and_reaction_updates() -> None:
 
     assert dispatcher.sub_routers
     assert dispatcher.errors.handlers
-    assert "message" in ALLOWED_UPDATES
-    assert "message_reaction" in ALLOWED_UPDATES
-    assert "message_reaction_count" in ALLOWED_UPDATES
+    assert ALLOWED_UPDATES == (
+        "message",
+        "channel_post",
+        "callback_query",
+        "message_reaction",
+    )

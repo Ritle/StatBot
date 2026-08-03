@@ -36,7 +36,7 @@ async def seed_rating(
     )
     user = User(
         telegram_user_id=8001,
-        username="ivan_test",
+        username="=2+3",
         first_name='Иван, "Тест"',
         last_name="Иванов",
         is_bot=False,
@@ -116,6 +116,7 @@ async def test_csv_has_bom_cyrillic_and_correct_escaping(db_session: AsyncSessio
         decoded = payload.decode("utf-8-sig")
         assert '"Иван, ""Тест"""' in decoded
         rows = list(csv.reader(io.StringIO(decoded)))
+        assert rows[1][2] == "'=2+3"
         assert rows[1][3] == 'Иван, "Тест"'
         assert artifact.filename.endswith("_20260801_20260901.csv")
     finally:

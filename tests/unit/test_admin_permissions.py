@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 from aiogram import Bot
 from aiogram.enums import ChatMemberStatus
 
+from app.bot.handlers.seasons import _creation_expired, _nonnegative_integer
 from app.bot.handlers.settings import _fsm_expired
 from app.services.permissions import TelegramPermissionService
 
@@ -52,3 +53,9 @@ def test_fresh_fsm_payload_is_accepted() -> None:
     assert not _fsm_expired(
         {"expires_at": (datetime.now(UTC) + timedelta(minutes=1)).isoformat()},
     )
+
+
+def test_season_creation_expiration_and_integer_bounds() -> None:
+    assert _creation_expired({"expires_at": "invalid"})
+    assert _nonnegative_integer("2147483647") == 2_147_483_647
+    assert _nonnegative_integer("2147483648") is None

@@ -245,6 +245,9 @@ async def rating_callback(
     except ValueError:
         await callback.answer("Кнопка устарела", show_alert=True)
         return
+    if callback_data.action not in {"page", "mine"}:
+        await callback.answer("Кнопка устарела", show_alert=True)
+        return
     async with database.session() as session:
         channel = await ChannelRepository(session).get_by_id(callback_data.channel_id)
         season = await SeasonRepository(session).get_by_id(callback_data.season_id)

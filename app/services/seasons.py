@@ -13,6 +13,8 @@ from app.schemas import RatingEntry
 from app.services.audit import AdminAction, AuditService
 from app.services.rating import RatingService
 
+_MAX_INTEGER_SETTING = 2_147_483_647
+
 
 class SeasonService:
     """Validate lifecycle transitions and freeze final rating snapshots."""
@@ -46,10 +48,15 @@ class SeasonService:
         ends_at = ends_at.astimezone(UTC)
         if ends_at <= starts_at:
             raise SeasonError("окончание периода должно быть позже начала")
-        if comment_points < 0 or reaction_points < 0 or minimum_comment_length < 0:
-            raise SeasonError("баллы и минимальная длина не могут быть отрицательными")
+        if not all(
+            0 <= value <= _MAX_INTEGER_SETTING
+            for value in (comment_points, reaction_points, minimum_comment_length)
+        ):
+            raise SeasonError("баллы и минимальная длина выходят за допустимый диапазон")
         if daily_comment_limit is not None and daily_comment_limit <= 0:
             raise SeasonError("дневной лимит должен быть положительным или отключён")
+        if daily_comment_limit is not None and daily_comment_limit > _MAX_INTEGER_SETTING:
+            raise SeasonError("дневной лимит выходит за допустимый диапазон")
         season = await self.seasons.create(
             channel_id=channel_id,
             name=normalized_name,
@@ -207,20 +214,22 @@ class SeasonService:
 
         changes: dict[str, object] = {}
         if comment_points is not None:
-            if comment_points < 0:
-                raise SeasonError("баллы не могут быть отрицательными")
+            if not 0 <= comment_points <= _MAX_INTEGER_SETTING:
+                raise SeasonError("баллы выходят за допустимый диапазон")
             changes["comment_points"] = comment_points
         if reaction_points is not None:
-            if reaction_points < 0:
-                raise SeasonError("баллы не могут быть отрицательными")
+            if not 0 <= reaction_points <= _MAX_INTEGER_SETTING:
+                raise SeasonError("баллы выходят за допустимый диапазон")
             changes["reaction_points"] = reaction_points
         if minimum_comment_length is not None:
-            if minimum_comment_length < 0:
-                raise SeasonError("минимальная длина не может быть отрицательной")
+            if not 0 <= minimum_comment_length <= _MAX_INTEGER_SETTING:
+                raise SeasonError("минимальная длина выходит за допустимый диапазон")
             changes["minimum_comment_length"] = minimum_comment_length
         if daily_comment_limit is not ...:
             if daily_comment_limit is not None and (
-                not isinstance(daily_comment_limit, int) or daily_comment_limit <= 0
+                not isinstance(daily_comment_limit, int)
+                or daily_comment_limit <= 0
+                or daily_comment_limit > _MAX_INTEGER_SETTING
             ):
                 raise SeasonError("дневной лимит должен быть положительным или отключён")
             changes["daily_comment_limit"] = daily_comment_limit

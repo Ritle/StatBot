@@ -48,7 +48,6 @@ class ReactionIngestService:
             last_name=sender.last_name,
             is_bot=sender.is_bot,
         )
-        old_keys = {reaction_key(item) for item in event.old_reaction}
         new_keys = {reaction_key(item) for item in event.new_reaction}
         created = await self.reactions.record_event_once(
             channel_id=channel.id,
@@ -61,12 +60,11 @@ class ReactionIngestService:
         )
         if not created:
             return False
-        await self.reactions.apply_current_difference(
+        await self.reactions.synchronize_current_set(
             channel_id=channel.id,
             post_id=post.id,
             user_id=user.id,
-            removed_keys=old_keys - new_keys,
-            added_keys=new_keys - old_keys,
+            desired_keys=new_keys,
             created_at=event.date,
         )
         return True

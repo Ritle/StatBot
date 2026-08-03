@@ -7,12 +7,14 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
 from app.bot.handlers.errors import handle_unexpected_error
+from app.bot.middlewares import RetryAfterMiddleware
 from app.bot.routers import ALLOWED_UPDATES, root_router
 from app.config import BotMode, Settings, load_settings
 from app.database.session import Database
@@ -48,8 +50,11 @@ async def run(settings: Settings) -> None:
     if settings.bot_mode is not BotMode.POLLING:
         raise RuntimeError("Webhook mode is configured but is not implemented yet")
 
+    telegram_session = AiohttpSession(timeout=30)
+    telegram_session.middleware(RetryAfterMiddleware())
     bot = Bot(
         token=settings.bot_token.get_secret_value(),
+        session=telegram_session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     try:
@@ -61,6 +66,7 @@ async def run(settings: Settings) -> None:
                 database=database,
                 settings=settings,
                 allowed_updates=list(ALLOWED_UPDATES),
+                handle_as_tasks=False,
                 handle_signals=True,
                 close_bot_session=False,
             )

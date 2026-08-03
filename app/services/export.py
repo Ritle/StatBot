@@ -18,6 +18,14 @@ from app.models import Channel, Season, User
 from app.schemas import RatingEntry
 from app.services.rating import RatingService
 
+_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def safe_csv_text(value: str | None) -> str:
+    """Prevent spreadsheet programs from interpreting profile fields as formulas."""
+    text = value or ""
+    return f"'{text}" if text.startswith(_FORMULA_PREFIXES) else text
+
 
 @dataclass(frozen=True, slots=True)
 class ExportArtifact:
@@ -64,9 +72,9 @@ class ExportService:
             (
                 entry.position,
                 entry.telegram_user_id,
-                profiles[entry.user_id].username or "",
-                profiles[entry.user_id].first_name,
-                profiles[entry.user_id].last_name or "",
+                safe_csv_text(profiles[entry.user_id].username),
+                safe_csv_text(profiles[entry.user_id].first_name),
+                safe_csv_text(profiles[entry.user_id].last_name),
                 entry.total_comments,
                 entry.counted_comments,
                 entry.reactions,

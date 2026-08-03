@@ -175,6 +175,14 @@ class RatingService:
             pagination="LIMIT :limit OFFSET :offset",
             extra={"limit": safe_size, "offset": safe_page * safe_size},
         )
+        if not rows and safe_page > 0:
+            return await self.get_page(
+                season,
+                timezone=timezone,
+                page=0,
+                page_size=safe_size,
+                order=order,
+            )
         entries = tuple(self._map_row(row) for row in rows)
         total = int(rows[0]["total_rows"]) if rows else 0
         return RatingPage(entries, total, safe_page, safe_size)

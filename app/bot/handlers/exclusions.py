@@ -14,8 +14,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from aiogram.types import User as TelegramUser
 
+from app.bot.admin_access import resolve_admin_channel, verify_admin_callback_channel
 from app.bot.callbacks import ChannelChoiceCallback, ExclusionCallback
-from app.bot.handlers.seasons import _channel_from_callback, _resolve_admin_channel
 from app.bot.keyboards import exclusion_choice_keyboard
 from app.bot.states import ExclusionStates
 from app.config import Settings
@@ -94,7 +94,7 @@ async def _begin_exclusion_command(
             "expires_at": (datetime.now(UTC) + _TTL).isoformat(),
         },
     )
-    channel = await _resolve_admin_channel(
+    channel = await resolve_admin_channel(
         message,
         action=action,
         bot=bot,
@@ -142,7 +142,7 @@ async def exclusion_channel_selected(
     database: Database,
     settings: Settings,
 ) -> None:
-    channel = await _channel_from_callback(
+    channel = await verify_admin_callback_channel(
         callback,
         callback_data.channel_id,
         bot=bot,
@@ -239,7 +239,7 @@ async def exclusion_user_selected(
     database: Database,
     settings: Settings,
 ) -> None:
-    channel = await _channel_from_callback(
+    channel = await verify_admin_callback_channel(
         callback,
         callback_data.channel_id,
         bot=bot,

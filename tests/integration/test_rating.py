@@ -293,6 +293,36 @@ async def test_reaction_ingestion_is_idempotent_and_removal_updates_current_set(
     assert await db_session.scalar(select(func.count()).select_from(CurrentReaction)) == 0
 
 
+async def test_reaction_snapshot_removes_stale_materialized_keys(
+    db_session: AsyncSession,
+) -> None:
+    channel = await create_channel(db_session)
+    stored_user = await create_user(db_session, 401)
+    post = await create_post(db_session, channel, message_id=78)
+    db_session.add(
+        CurrentReaction(
+            channel_id=channel.id,
+            post_id=post.id,
+            user_id=stored_user.id,
+            reaction_key="emoji:🔥",
+            created_at=START,
+        ),
+    )
+    await db_session.flush()
+    event = MessageReactionUpdated(
+        chat=Chat(id=channel.telegram_channel_id, type=ChatType.CHANNEL, title="Channel"),
+        message_id=post.telegram_message_id,
+        date=START + timedelta(hours=1),
+        old_reaction=[],
+        new_reaction=[ReactionTypeEmoji(type=ReactionTypeType.EMOJI, emoji="👍")],
+        user=TelegramUser(id=401, is_bot=False, first_name="Reaction user"),
+    )
+
+    assert await ReactionIngestService(db_session).ingest(event, 9003) is True
+    keys = list(await db_session.scalars(select(CurrentReaction.reaction_key)))
+    assert keys == ["emoji:👍"]
+
+
 async def test_equal_scores_use_deterministic_telegram_id_tiebreak(
     db_session: AsyncSession,
 ) -> None:
@@ -341,6 +371,24 @@ async def test_pagination_personal_position_and_comment_sorting(
     assert second_page.total == 12
     assert len(second_page.entries) == 2
     assert personal is not None and personal.position == 12
+
+
+async def test_out_of_range_page_falls_back_to_first_page(db_session: AsyncSession) -> None:
+    channel = await create_channel(db_session)
+    season = await create_season(db_session, channel)
+    user = await create_user(db_session, 699)
+    post = await create_post(db_session, channel)
+    await add_comment(db_session, channel, post, user, 991, START + timedelta(hours=1))
+
+    page = await RatingService(db_session).get_page(
+        season,
+        timezone=channel.timezone,
+        page=999,
+    )
+
+    assert page.page == 0
+    assert page.total == 1
+    assert page.entries[0].telegram_user_id == 699
 
 
 async def test_finish_freezes_results_against_later_activity(

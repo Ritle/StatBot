@@ -15,9 +15,8 @@ from aiogram.types import CallbackQuery, FSInputFile, Message
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot.admin_access import resolve_admin_channel, verify_admin_callback_channel
 from app.bot.callbacks import ChannelChoiceCallback, SettingsCallback
-from app.bot.handlers.admin import _format_status
-from app.bot.handlers.seasons import _channel_from_callback, _resolve_admin_channel
 from app.bot.keyboards import (
     period_choice_keyboard,
     rule_confirmation_keyboard,
@@ -25,6 +24,7 @@ from app.bot.keyboards import (
     settings_back_keyboard,
     settings_keyboard,
 )
+from app.bot.presentation import format_status
 from app.bot.states import RuleEditStates
 from app.config import Settings
 from app.database.session import Database
@@ -40,6 +40,7 @@ from app.utils.datetime import format_local_datetime
 
 router = Router(name=__name__)
 _RULE_TTL = timedelta(minutes=10)
+_MAX_INTEGER_SETTING = 2_147_483_647
 _RULE_FIELDS = {
     "rule_comment": "comment_points",
     "rule_reaction": "reaction_points",
@@ -67,7 +68,7 @@ async def settings_command(
     database: Database,
     settings: Settings,
 ) -> None:
-    channel = await _resolve_admin_channel(
+    channel = await resolve_admin_channel(
         message,
         action="settings",
         bot=bot,
@@ -86,7 +87,7 @@ async def settings_channel_selected(
     database: Database,
     settings: Settings,
 ) -> None:
-    channel = await _channel_from_callback(
+    channel = await verify_admin_callback_channel(
         callback,
         callback_data.channel_id,
         bot=bot,
@@ -106,7 +107,7 @@ async def export_command(
     database: Database,
     settings: Settings,
 ) -> None:
-    channel = await _resolve_admin_channel(
+    channel = await resolve_admin_channel(
         message,
         action="export",
         bot=bot,
@@ -125,7 +126,7 @@ async def export_channel_selected(
     database: Database,
     settings: Settings,
 ) -> None:
-    channel = await _channel_from_callback(
+    channel = await verify_admin_callback_channel(
         callback,
         callback_data.channel_id,
         bot=bot,
@@ -153,7 +154,7 @@ async def settings_callback(
     database: Database,
     settings: Settings,
 ) -> None:
-    channel = await _channel_from_callback(
+    channel = await verify_admin_callback_channel(
         callback,
         callback_data.channel_id,
         bot=bot,
@@ -227,7 +228,7 @@ async def settings_callback(
             return
         await callback.answer()
         await callback.message.edit_text(
-            _format_status(status),
+            format_status(status),
             reply_markup=settings_back_keyboard(channel.id),
         )
     else:
@@ -447,7 +448,11 @@ def _parse_rule_value(field: str, text: str | None) -> int | None | object:
         value = int(raw)
     except ValueError:
         return ...
-    if value < 0 or (field == "daily_comment_limit" and value == 0):
+    if (
+        value < 0
+        or value > _MAX_INTEGER_SETTING
+        or (field == "daily_comment_limit" and value == 0)
+    ):
         return ...
     return value
 

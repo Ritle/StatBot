@@ -112,27 +112,25 @@ class ReactionRepository(BaseRepository[ReactionEvent]):
         )
         return await self.session.scalar(statement) is not None
 
-    async def apply_current_difference(
+    async def synchronize_current_set(
         self,
         *,
         channel_id: int,
         post_id: int,
         user_id: int,
-        removed_keys: set[str],
-        added_keys: set[str],
+        desired_keys: set[str],
         created_at: datetime,
     ) -> None:
-        """Apply set differences after the event log accepted an update."""
-        if removed_keys:
-            await self.session.execute(
-                delete(CurrentReaction).where(
-                    CurrentReaction.channel_id == channel_id,
-                    CurrentReaction.post_id == post_id,
-                    CurrentReaction.user_id == user_id,
-                    CurrentReaction.reaction_key.in_(removed_keys),
-                ),
-            )
-        if added_keys:
+        """Synchronize materialized state to Telegram's authoritative new snapshot."""
+        stale = delete(CurrentReaction).where(
+            CurrentReaction.channel_id == channel_id,
+            CurrentReaction.post_id == post_id,
+            CurrentReaction.user_id == user_id,
+        )
+        if desired_keys:
+            stale = stale.where(CurrentReaction.reaction_key.not_in(desired_keys))
+        await self.session.execute(stale)
+        if desired_keys:
             statement = (
                 insert(CurrentReaction)
                 .values(
@@ -145,7 +143,7 @@ class ReactionRepository(BaseRepository[ReactionEvent]):
                             "created_at": created_at,
                             "updated_at": created_at,
                         }
-                        for key in sorted(added_keys)
+                        for key in sorted(desired_keys)
                     ],
                 )
                 .on_conflict_do_nothing(constraint="uq_current_reactions_actor_key")

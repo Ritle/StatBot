@@ -12,14 +12,9 @@ from app.bot.handlers.settings import router as settings_router
 
 ALLOWED_UPDATES: tuple[str, ...] = (
     "message",
-    "edited_message",
     "channel_post",
-    "edited_channel_post",
     "callback_query",
-    "my_chat_member",
-    "chat_member",
     "message_reaction",
-    "message_reaction_count",
 )
 
 root_router = Router(name="root")
