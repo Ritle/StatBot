@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -101,6 +102,48 @@ async def test_channel_telegram_id_is_unique(db_session: AsyncSession) -> None:
 
     with pytest.raises(IntegrityError):
         await db_session.flush()
+
+
+async def test_release_hardening_indexes_and_restrict_foreign_keys(
+    db_session: AsyncSession,
+) -> None:
+    indexes = set(
+        (
+            await db_session.scalars(
+                text(
+                    "SELECT indexname FROM pg_indexes "
+                    "WHERE indexname IN "
+                    "('ix_comments_channel_telegram_message', "
+                    "'ix_current_reactions_channel_created_at')",
+                ),
+            )
+        ).all(),
+    )
+    constraint_rows = (
+        await db_session.execute(
+            text(
+                "SELECT tc.constraint_name, rc.delete_rule "
+                "FROM information_schema.table_constraints tc "
+                "JOIN information_schema.referential_constraints rc "
+                "ON rc.constraint_name = tc.constraint_name "
+                "WHERE tc.constraint_name IN "
+                "('fk_admin_audit_log_channel_id_channels', "
+                "'fk_season_results_season_id_seasons')",
+            ),
+        )
+    ).all()
+    delete_rules: dict[str, str] = dict(
+        (str(row[0]), str(row[1])) for row in constraint_rows
+    )
+
+    assert indexes == {
+        "ix_comments_channel_telegram_message",
+        "ix_current_reactions_channel_created_at",
+    }
+    assert delete_rules == {
+        "fk_admin_audit_log_channel_id_channels": "RESTRICT",
+        "fk_season_results_season_id_seasons": "RESTRICT",
+    }
 
 
 async def test_user_telegram_id_is_unique(db_session: AsyncSession) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base, CreatedAtMixin, IdMixin
@@ -35,17 +35,17 @@ class SeasonResult(IdMixin, CreatedAtMixin, Base):
     )
 
     season_id: Mapped[int] = mapped_column(
-        ForeignKey("seasons.id", ondelete="CASCADE"),
+        ForeignKey("seasons.id", ondelete="RESTRICT"),
         nullable=False,
     )
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    position: Mapped[int] = mapped_column(nullable=False)
-    score: Mapped[int] = mapped_column(nullable=False)
-    total_comments: Mapped[int] = mapped_column(nullable=False)
-    counted_comments: Mapped[int] = mapped_column(nullable=False)
-    reactions: Mapped[int] = mapped_column(nullable=False)
-    active_days: Mapped[int] = mapped_column(nullable=False)
+    position: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    score: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_comments: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    counted_comments: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reactions: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    active_days: Mapped[int] = mapped_column(BigInteger, nullable=False)
     first_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

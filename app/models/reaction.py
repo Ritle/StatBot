@@ -75,6 +75,11 @@ class CurrentReaction(IdMixin, TimestampMixin, Base):
             name="uq_current_reactions_actor_key",
         ),
         Index("ix_current_reactions_post_user", "post_id", "user_id"),
+        Index(
+            "ix_current_reactions_channel_created_at",
+            "channel_id",
+            "created_at",
+        ),
     )
 
     channel_id: Mapped[int] = mapped_column(

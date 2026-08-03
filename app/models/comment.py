@@ -35,6 +35,11 @@ class Comment(IdMixin, CreatedAtMixin, Base):
             name="text_length_non_negative",
         ),
         Index("ix_comments_channel_created_at", "channel_id", "created_at"),
+        Index(
+            "ix_comments_channel_telegram_message",
+            "channel_id",
+            "telegram_message_id",
+        ),
         Index("ix_comments_user_created_at", "user_id", "created_at"),
         Index(
             "ix_comments_post_user_created_at",

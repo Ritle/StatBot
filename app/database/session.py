@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -24,7 +26,12 @@ class Database:
         self._engine: AsyncEngine = create_async_engine(
             url,
             pool_pre_ping=True,
-            connect_args={"server_settings": {"timezone": "UTC"}},
+            pool_timeout=10,
+            pool_recycle=1800,
+            connect_args={
+                "command_timeout": 60,
+                "server_settings": {"timezone": "UTC"},
+            },
         )
         self._session_factory = async_sessionmaker(
             bind=self._engine,
@@ -48,10 +55,26 @@ class Database:
                 await session.rollback()
                 raise
 
-    async def check_connection(self) -> None:
-        """Fail fast if PostgreSQL is unavailable."""
-        async with self._engine.connect() as connection:
-            await connection.execute(text("SELECT 1"))
+    async def check_connection(self, *, attempts: int = 5) -> None:
+        """Check PostgreSQL with bounded retries for transient connection failures."""
+        if attempts < 1:
+            raise ValueError("attempts must be positive")
+        for attempt in range(1, attempts + 1):
+            try:
+                async with self._engine.connect() as connection:
+                    await connection.execute(text("SELECT 1"))
+                break
+            except OperationalError:
+                if attempt == attempts:
+                    raise
+                delay = min(2 ** (attempt - 1), 8)
+                logger.warning(
+                    "PostgreSQL is temporarily unavailable; retry %s/%s in %s seconds",
+                    attempt,
+                    attempts,
+                    delay,
+                )
+                await asyncio.sleep(delay)
         logger.info("PostgreSQL connection established")
 
     async def dispose(self) -> None:

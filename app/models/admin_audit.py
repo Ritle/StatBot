@@ -22,7 +22,7 @@ class AdminAuditLog(IdMixin, CreatedAtMixin, Base):
 
     telegram_admin_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     channel_id: Mapped[int] = mapped_column(
-        ForeignKey("channels.id", ondelete="CASCADE"),
+        ForeignKey("channels.id", ondelete="RESTRICT"),
         nullable=False,
     )
     action: Mapped[str] = mapped_column(String(64), nullable=False)
