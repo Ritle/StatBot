@@ -2,9 +2,13 @@
 .gitignore
 .env
 .venv
+.tools
 __pycache__
 .pytest_cache
 .mypy_cache
 .ruff_cache
+telegram_activity_bot.egg-info
+*.egg-info
+tests
+*.log
 *.pyc
-

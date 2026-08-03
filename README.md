@@ -220,8 +220,9 @@ cp .env.example .env
 
 ```env
 BOT_TOKEN=token_from_botfather
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/activity_bot
-TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/activity_bot_test
+POSTGRES_PASSWORD=replace_with_url_safe_password
+DATABASE_URL=postgresql+asyncpg://postgres:replace_with_url_safe_password@localhost:5432/activity_bot
+TEST_DATABASE_URL=postgresql+asyncpg://postgres:replace_with_url_safe_password@localhost:5432/activity_bot_test
 SUPERADMIN_IDS=123456789,987654321
 LOG_LEVEL=INFO
 DEFAULT_TIMEZONE=Europe/Amsterdam
@@ -244,8 +245,9 @@ python -m app.main
 Или через Docker Compose:
 
 ```bash
-docker compose up --build
-docker compose run --rm bot alembic upgrade head
+docker compose up --build -d
+docker compose ps
+docker compose logs -f migrate bot
 ```
 
 Проверки качества:
@@ -253,9 +255,130 @@ docker compose run --rm bot alembic upgrade head
 ```bash
 pytest
 ruff check .
-mypy app tests
+mypy app
 alembic check
 ```
+
+## Требования и первый запуск
+
+Для запуска без Docker нужны Python 3.12 и PostgreSQL 16. Создайте отдельные базы
+`activity_bot` и `activity_bot_test`, скопируйте `.env.example` в `.env`, задайте
+токен и URL-safe пароль PostgreSQL, затем выполните:
+
+```bash
+python -m pip install -e ".[dev]"
+alembic upgrade head
+python -m app.main
+```
+
+Для Docker нужны Docker Engine с Compose v2. В `.env` обязательны как минимум
+`BOT_TOKEN` и `POSTGRES_PASSWORD`. Сервис `migrate` ждёт готовности PostgreSQL и
+выполняет `alembic upgrade head`; `bot` запускается только после успешных миграций.
+Runtime-образ работает от системного пользователя `bot`, не содержит тестов и
+dev-зависимостей, использует read-only filesystem и отдельный tmpfs для временных
+CSV. Readiness контейнера проверяет соединение с БД командой
+`python -m app.healthcheck`.
+
+После первого запуска:
+
+1. проверьте `docker compose ps` и логи `docker compose logs migrate bot`;
+2. выполните `/setup` в discussion group или передайте числовой ID в личном чате;
+3. выполните `/status` и устраните все предупреждения;
+4. создайте черновик периода через `/create_season`, затем запустите его;
+5. опубликуйте новый пост и оставьте тестовый комментарий;
+6. проверьте `/rating`, `/me` и CSV через `/export`.
+
+## Команды
+
+- `/setup`, `/status`, `/settings` — подключение, диагностика и меню администратора;
+- `/create_season`, `/start_season`, `/finish_season`, `/cancel_season` — жизненный
+  цикл периода;
+- `/seasons`, `/period`, `/recalculate` — архив, текущие настройки и пересчёт;
+- `/rating`, `/me`, `/top_comments`, `/top_reactions` — публичная статистика;
+- `/exclude`, `/include` — исключение и возврат известного пользователя;
+- `/export` — выбор периода и выгрузка CSV с UTF-8 BOM.
+
+Экспорт экранирует CSV стандартным модулем Python и добавляет апостроф к профильным
+полям, начинающимся с `=`, `+`, `-` или `@`, чтобы Excel не выполнял их как формулы.
+
+## Ограничения Telegram
+
+- Bot API не восстанавливает историю до подключения: учитываются только updates,
+  полученные после запуска и настройки бота.
+- Bot API не сообщает надёжно об удалении обычных сообщений в группе; без отдельного
+  подтверждённого административного процесса такое удаление не меняет рейтинг.
+- Анонимные реакции приходят как агрегированный `message_reaction_count` без Telegram
+  user ID. Они намеренно не запрашиваются в `allowed_updates` и не участвуют в
+  персональном рейтинге. Реакции от имени чата также игнорируются.
+- Сообщения от имени канала, анонимных администраторов и других ботов не считаются
+  персональной активностью.
+- Реализован polling одного экземпляра бота. Webhook mode пока не реализован; два
+  polling-экземпляра с одним токеном запускать нельзя.
+- Редактирование старого комментария не пересчитывает сохранённую длину автоматически.
+
+## Миграции и безопасность данных
+
+Перед обычным запуском без Docker всегда выполняйте `alembic upgrade head`. В Docker
+это делает одноразовый сервис `migrate`. Не запускайте несколько миграционных задач
+параллельно и сначала делайте резервную копию перед обновлением production.
+
+Завершённые результаты и журнал административных действий защищены внешними ключами
+`RESTRICT`: удалить родительский период или канал случайным `DELETE` нельзя. `CASCADE`
+оставлен только для зависимых событий внутри удаляемого агрегата; приложение не имеет
+публичных команд удаления каналов, публикаций, периодов, пользователей или активности.
+Downgrade миграции к 32-битным агрегатам завершится ошибкой, если production-значение
+уже не помещается в `integer`, вместо молчаливого усечения данных.
+
+## Резервное копирование PostgreSQL
+
+Пример backup Docker-базы в custom format:
+
+```bash
+docker compose exec -T db pg_dump -U postgres -d activity_bot -Fc > activity_bot.dump
+```
+
+Проверяйте, что файл создан и не пуст. Для восстановления сначала остановите бота,
+создайте отдельную пустую базу и восстановите dump туда; не проверяйте restore впервые
+на production:
+
+```bash
+docker compose stop bot
+docker compose exec -T db createdb -U postgres activity_bot_restore
+docker compose exec -T db pg_restore -U postgres -d activity_bot_restore --exit-on-error < activity_bot.dump
+```
+
+После проверки можно переключить `DATABASE_URL` на восстановленную базу и снова
+запустить `docker compose up -d`. Храните backup вне Docker volume и проверяйте
+восстановление регулярно.
+
+## Обновление проекта
+
+```bash
+git pull --ff-only
+docker compose build --pull
+docker compose up -d --remove-orphans
+docker compose logs migrate bot
+```
+
+Перед обновлением сделайте backup. Если `migrate` завершился с ошибкой, бот не
+запустится: не обходите зависимость вручную, исправьте миграцию или конфигурацию.
+
+## Производительность и надёжность
+
+Рейтинг рассчитывается одним SQL-запросом: фильтрация периода, локальные календарные
+дни, дневной `row_number()`, итоговая сортировка и пагинация выполняются PostgreSQL.
+Основные пути покрыты индексами `comments(channel_id, created_at)`,
+`current_reactions(channel_id, created_at)` и уникальными индексами идентичности.
+Полная выборка в Python используется только для явно запрошенного CSV-экспорта;
+формирование файла вынесено из event loop.
+
+Updates обрабатываются последовательно, чтобы комментарий не обогнал автоматическую
+копию публикации, а реакции одного пользователя сохраняли порядок. Повторная доставка
+безопасна благодаря upsert/unique constraints. Для Telegram 429 действует не более
+двух повторов и только при ожидании до 30 секунд; подключение к PostgreSQL на startup
+повторяется ограниченно. HTTP-запросы Telegram и SQL-команды имеют таймауты. При
+SIGTERM polling останавливается, HTTP-сессия закрывается, пул PostgreSQL освобождается;
+собственных бесконечных фоновых задач у приложения нет.
 
 ## Архитектура
 

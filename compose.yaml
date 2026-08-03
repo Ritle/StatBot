@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: activity_bot
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d activity_bot"]
       interval: 5s
@@ -13,16 +13,27 @@ services:
       start_period: 5s
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
     restart: unless-stopped
 
-  bot:
+  migrate:
+    image: telegram-activity-bot:local
     build:
       context: .
     environment:
-      BOT_TOKEN: ${BOT_TOKEN:-}
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/activity_bot
-      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/activity_bot_test
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/activity_bot
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  bot:
+    image: telegram-activity-bot:local
+    build:
+      context: .
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in .env}
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/activity_bot
       SUPERADMIN_IDS: ${SUPERADMIN_IDS:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Europe/Amsterdam}
@@ -31,8 +42,20 @@ services:
       WEBHOOK_PATH: ${WEBHOOK_PATH:-/telegram/webhook}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
     restart: unless-stopped
 
 volumes:
